@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <assert.h>
+
 #include "common/compat_getopt.h"
 #include "libopensc/opensc.h"
 #include "libopensc/asn1.h"
@@ -210,9 +212,10 @@ static int read_transp(sc_card_t *card, const char *pathstring, unsigned char *b
 {
 	sc_path_t path;
 	int r;
+  sc_file_t file;
 
 	sc_format_path(pathstring, &path);
-	r = sc_select_file(card, &path, NULL);
+	r = sc_select_file(card, &path, &file);
 	if (r < 0)
 		fprintf(stderr, "\nFailed to select file %s: %s\n", pathstring, sc_strerror(r));
 	else {
@@ -376,6 +379,111 @@ out:
 	return;
 }
 
+
+static struct rseid_tokens {
+	unsigned char** tokens;
+	size_t t_size;
+} rseid_tokens;
+
+static struct rseid_tokens* tokenise_rseid_values (unsigned char* buf, int len)
+{
+	assert (buf != NULL);
+	struct rseid_tokens * r;
+	unsigned char **tokens;
+	int i = 0;
+	
+	r = (struct rseid_tokens*) malloc (sizeof (struct rseid_tokens));
+	r->t_size = 4;
+	r->tokens = calloc (r->t_size, sizeof (unsigned char*));
+	
+	while (len > 0)
+	{
+		char tag = *buf++;
+		/* check whether we have the 0x06 contant at 2nd place */
+		assert (*buf++ == 0x06);
+		int tag_len = *buf++;
+		/* check for '0x00' contant at the 4th place */
+		assert (*buf++ == 0x00);
+		/* everything should be fine, copy the tag content */
+		if (i == r->t_size) {
+			r->t_size *= 2;
+			r->tokens = realloc (r->tokens, r->t_size*sizeof (unsigned char*));
+		}
+		
+		r->tokens[i] = strndup (buf, tag_len);
+		buf += tag_len;
+		i++;
+		len -= (4+tag_len);
+	}
+	
+	r->t_size = i;
+	
+	return r;
+}
+
+static void free_rseid_tokens (struct rseid_tokens* t)
+{
+	int i;
+
+	for (i = 0; i < t->t_size; i++)
+			free (t->tokens[i]);
+				
+	free (t);
+}
+
+static void do_rseid(sc_card_t *card)
+{
+  int r, i;
+	unsigned char buff[10000];
+	struct rseid_tokens* t = NULL;
+	
+  /* read general info */
+  r = read_transp (card, "0f02", buff, sizeof(buff));
+	if (r < 0)
+		return;
+	t = tokenise_rseid_values (buff, r);
+	printf ("eID number: %s\n", t->tokens[0]);
+	printf ("Issued at: %s\n", t->tokens[3]);
+	printf ("Valid till: %s\n", t->tokens[4]);
+	printf ("Issued by: %s %s\n", t->tokens[5], t->tokens[6]);
+
+	/* free tokens */
+	free_rseid_tokens (t);
+
+  /* read personal data */
+  r = read_transp (card, "0f03", buff, sizeof(buff));
+	if (r < 0)
+		return;
+	t = tokenise_rseid_values (buff, r);
+	printf ("JMBG: %s\n", t->tokens[0]);
+	printf ("Surname: %s\n", t->tokens[1]);
+	printf ("First name: %s\n", t->tokens[2]);
+	printf ("Middle name: %s\n", t->tokens[3]);
+	printf ("Gender: %s\n", t->tokens[4]);
+	printf ("Place of birth: ");
+	for (i = 5; i < t->t_size-2; i++) {
+		printf ("%s ", t->tokens[i]);
+	}
+	printf ("\nDate of birth: %s\n", t->tokens[t->t_size-2]);	
+
+	free_rseid_tokens (t);
+  /* read address */
+  r = read_transp (card, "0f04", buff, sizeof(buff));
+	if (r < 0)
+		return;
+	t = tokenise_rseid_values (buff, r);
+	printf ("Residence: ");
+	for (i = 0; i < t->t_size; i++) {
+		printf ("%s ", t->tokens[i]);
+	}
+	printf ("\n");
+
+	free_rseid_tokens (t);
+
+  return;
+}
+
+
 int main(int argc, char **argv)
 {
 	sc_context_t *ctx = NULL;
@@ -408,8 +516,10 @@ int main(int argc, char **argv)
 		do_esteid(card);
 	else if (card->type == SC_CARD_TYPE_BELPIC_EID)
 		do_belpic(card);
+	else if (card->type == SC_CARD_TYPE_APOLLOOS_RSEID)
+    do_rseid(card);
 	else {
-		fprintf(stderr, "Not an EstEID or Belpic card!\n");
+		fprintf(stderr, "Not an EstEID, Belpic or a SerbianID card!\n");
 		goto out;
 	}
 	
