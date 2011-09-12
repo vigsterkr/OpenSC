@@ -186,6 +186,10 @@ enum {
 	SC_CARD_TYPE_IASECC_GEMALTO,
 	SC_CARD_TYPE_IASECC_OBERTHUR,
 	SC_CARD_TYPE_IASECC_SAGEM,
+	
+	/* cards */
+	SC_CARD_TYPE_APOLLOOS_BASE = 26000,
+	SC_CARD_TYPE_APOLLOOS_RSEID,
 };
 
 extern sc_card_driver_t *sc_get_default_driver(void);
@@ -220,6 +224,7 @@ extern sc_card_driver_t *sc_get_javacard_driver(void);
 extern sc_card_driver_t *sc_get_itacns_driver(void);
 extern sc_card_driver_t *sc_get_authentic_driver(void);
 extern sc_card_driver_t *sc_get_iasecc_driver(void);
+extern sc_card_driver_t *sc_get_apolloos_driver(void);
 
 #ifdef __cplusplus
 }
