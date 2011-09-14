@@ -51,6 +51,7 @@ stamp-h*
 *.gif
 *.css
 *.out
+*.o
 *.tmp
 ChangeLog
 opensc.conf
@@ -74,3 +75,5 @@ p15dump
 prngtest
 base64
 lottery
+cardos-tool
+westcos-tool
